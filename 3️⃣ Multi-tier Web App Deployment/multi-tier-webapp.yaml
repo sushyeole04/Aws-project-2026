@@ -1,0 +1,606 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS 3-Tier Architecture Deployment: VPC, 2 ALBs, 2 ASGs, RDS MySQL'
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+    Default: ThreeTierApp
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.0.0.0/16
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.0.1.0/24
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.0.2.0/24
+  FrontendSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the frontend subnet in the first Availability Zone
+    Type: String
+    Default: 10.0.3.0/24
+  FrontendSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the frontend subnet in the second Availability Zone
+    Type: String
+    Default: 10.0.4.0/24
+  BackendSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the backend subnet in the first Availability Zone
+    Type: String
+    Default: 10.0.5.0/24
+  BackendSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the backend subnet in the second Availability Zone
+    Type: String
+    Default: 10.0.6.0/24
+  DBSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the database subnet in the first Availability Zone
+    Type: String
+    Default: 10.0.7.0/24
+  DBSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the database subnet in the second Availability Zone
+    Type: String
+    Default: 10.0.8.0/24
+  InstanceType:
+    Description: Web and Backend Server EC2 instance type
+    Type: String
+    Default: t3.micro
+  DBInstanceClass:
+    Description: RDS Database instance class
+    Type: String
+    Default: db.t3.micro
+  DBUser:
+    Description: Database Admin Username
+    Type: String
+    Default: admin
+  DBPassword:
+    Description: Database Admin Password (minimum 8 characters)
+    Type: String
+    NoEcho: true
+    Default: Password123!
+    MinLength: 8
+  AMIId:
+    Description: Amazon Linux 2023 AMI ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-IGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Public-Subnet-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Public-Subnet-2
+
+  FrontendSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref FrontendSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Frontend-Subnet-1
+
+  FrontendSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref FrontendSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Frontend-Subnet-2
+
+  BackendSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref BackendSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Backend-Subnet-1
+
+  BackendSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref BackendSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Backend-Subnet-2
+
+  DBSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref DBSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-DB-Subnet-1
+
+  DBSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref DBSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-DB-Subnet-2
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Public-RouteTable
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Private-RouteTable-1
+
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  FrontendSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref FrontendSubnet1
+
+  BackendSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref BackendSubnet1
+
+  DBSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref DBSubnet1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Private-RouteTable-2
+
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  FrontendSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref FrontendSubnet2
+
+  BackendSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref BackendSubnet2
+
+  DBSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref DBSubnet2
+
+  ExternalAlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP/HTTPS to external ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  FrontendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from External ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ExternalAlbSecurityGroup
+
+  InternalAlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from Frontend
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref FrontendSecurityGroup
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from Internal ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref InternalAlbSecurityGroup
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL port from Backend
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+
+  ExternalALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-External-ALB
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ExternalAlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-External-ALB
+
+  ExternalALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ExternalALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-Frontend-TG
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  InternalALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-Internal-ALB
+      Scheme: internal
+      Subnets:
+        - !Ref FrontendSubnet1
+        - !Ref FrontendSubnet2
+      SecurityGroups:
+        - !Ref InternalAlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Internal-ALB
+
+  InternalALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref InternalALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BackendTargetGroup
+
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-Backend-TG
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /api/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  FrontendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: !Ref AMIId
+        SecurityGroupIds:
+          - !Ref FrontendSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
+            echo "<html><head><style>body { font-family: Arial; text-align: center; margin-top: 50px; background: #f4f4f4; }</style></head><body>" > /var/www/html/index.html
+            echo "<h1>Welcome to the 3-Tier Web App! (Frontend)</h1>" >> /var/www/html/index.html
+            echo "<p>Frontend Instance ID: $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</p>" >> /var/www/html/index.html
+            echo "<p>Calling backend API...</p>" >> /var/www/html/index.html
+            
+            # Simple script to proxy requests to backend via Internal ALB
+            cat << 'EOF' > /etc/httpd/conf.d/proxy.conf
+            ProxyPass "/api" "http://${InternalALB.DNSName}/api"
+            ProxyPassReverse "/api" "http://${InternalALB.DNSName}/api"
+            EOF
+            
+            echo "<div id='backend-data'>Loading...</div>" >> /var/www/html/index.html
+            echo "<script>" >> /var/www/html/index.html
+            echo "fetch('/api/health').then(response => response.json()).then(data => {" >> /var/www/html/index.html
+            echo "  document.getElementById('backend-data').innerHTML = '<h2>Backend Response:</h2>' + JSON.stringify(data);" >> /var/www/html/index.html
+            echo "}).catch(error => {" >> /var/www/html/index.html
+            echo "  document.getElementById('backend-data').innerHTML = '<p style=\"color:red;\">Error calling backend API: ' + error + '</p>';" >> /var/www/html/index.html
+            echo "});" >> /var/www/html/index.html
+            echo "</script>" >> /var/www/html/index.html
+            echo "</body></html>" >> /var/www/html/index.html
+            
+            systemctl restart httpd
+
+  FrontendASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref FrontendSubnet1
+        - !Ref FrontendSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref FrontendLaunchTemplate
+        Version: !GetAtt FrontendLaunchTemplate.LatestVersionNumber
+      MinSize: '2'
+      MaxSize: '4'
+      DesiredCapacity: '2'
+      TargetGroupARNs:
+        - !Ref FrontendTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Frontend-Instance
+          PropagateAtLaunch: true
+
+  BackendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: !Ref AMIId
+        SecurityGroupIds:
+          - !Ref BackendSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y python3 pip
+            pip3 install flask pymysql
+            
+            cat << 'EOF' > /home/ec2-user/app.py
+            from flask import Flask, jsonify
+            import pymysql
+            import os
+            
+            app = Flask(__name__)
+            
+            DB_HOST = os.environ.get('DB_HOST', '${DBInstance.Endpoint.Address}')
+            DB_USER = os.environ.get('DB_USER', '${DBUser}')
+            DB_PASS = os.environ.get('DB_PASS', '${DBPassword}')
+            
+            @app.route('/api/health')
+            def health():
+                db_status = "Not Connected"
+                try:
+                    conn = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, connect_timeout=2)
+                    db_status = "Connected to RDS MySQL"
+                    conn.close()
+                except Exception as e:
+                    db_status = f"Error: {str(e)}"
+                    
+                return jsonify({
+                    "status": "Healthy",
+                    "tier": "Backend API",
+                    "database_status": db_status
+                })
+                
+            if __name__ == '__main__':
+                app.run(host='0.0.0.0', port=8080)
+            EOF
+            
+            # Create systemd service
+            cat << 'EOF' > /etc/systemd/system/backend.service
+            [Unit]
+            Description=Backend API Service
+            After=network.target
+
+            [Service]
+            User=ec2-user
+            WorkingDirectory=/home/ec2-user
+            ExecStart=/usr/bin/python3 app.py
+            Restart=always
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            
+            systemctl daemon-reload
+            systemctl enable backend.service
+            systemctl start backend.service
+
+  BackendASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref BackendSubnet1
+        - !Ref BackendSubnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref BackendLaunchTemplate
+        Version: !GetAtt BackendLaunchTemplate.LatestVersionNumber
+      MinSize: '2'
+      MaxSize: '4'
+      DesiredCapacity: '2'
+      TargetGroupARNs:
+        - !Ref BackendTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Backend-Instance
+          PropagateAtLaunch: true
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for RDS Database
+      SubnetIds:
+        - !Ref DBSubnet1
+        - !Ref DBSubnet2
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '20'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: '8.0'
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageType: gp2
+      BackupRetentionPeriod: 1
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-Database
+    DeletionPolicy: Delete
+
+Outputs:
+  FrontendURL:
+    Description: URL of the 3-Tier Application Frontend
+    Value: !Sub http://${ExternalALB.DNSName}
+    Export:
+      Name: !Sub ${AWS::StackName}-FrontendURL
+
+  InternalALBDNS:
+    Description: Internal ALB DNS Name (For Frontend to communicate with Backend)
+    Value: !Ref InternalALB
